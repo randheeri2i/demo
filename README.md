@@ -31,14 +31,31 @@ A user-friendly Laravel application to:
 - PHP 8.2+
 - Composer
 
-## Installation
+## Installation (MySQL)
 
 ```bash
 composer install
 cp .env.example .env
 php artisan key:generate
-touch database/database.sqlite
+# configure MySQL credentials in .env
 php artisan migrate
+```
+
+Create a MySQL database before running migrations (example):
+
+```sql
+CREATE DATABASE excel_compare_pro CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+```
+
+Default `.env` database values:
+
+```dotenv
+DB_CONNECTION=mysql
+DB_HOST=127.0.0.1
+DB_PORT=3306
+DB_DATABASE=excel_compare_pro
+DB_USERNAME=root
+DB_PASSWORD=
 ```
 
 ## Run
