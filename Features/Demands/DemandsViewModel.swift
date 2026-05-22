@@ -1,4 +1,5 @@
 import Foundation
+import Combine
 
 struct DemandItem: Identifiable, Hashable {
     let id: String

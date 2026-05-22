@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import Combine
 
 struct PropertyListing: Identifiable, Hashable {
     let id: String

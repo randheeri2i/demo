@@ -1,4 +1,5 @@
 import Foundation
+import Combine
 
 enum VisitStatus: String, CaseIterable {
     case scheduled

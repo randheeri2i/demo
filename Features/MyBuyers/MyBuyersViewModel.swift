@@ -1,4 +1,5 @@
 import Foundation
+import Combine
 
 struct BuyerItem: Identifiable, Hashable {
     let id: Int

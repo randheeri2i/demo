@@ -1,4 +1,5 @@
 import Foundation
+import Combine
 
 struct ProfileUiState: Hashable {
     var fullName = ""
