@@ -1,5 +1,6 @@
 package com.pinmyhome.app.ui.screens.other
 
+import android.content.Context
 import android.graphics.BitmapFactory
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -92,16 +93,20 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.pinmyhome.app.network.ApiClient
+import com.pinmyhome.app.network.ApiConfig
+import com.pinmyhome.app.network.ApiEndpoints
 import com.pinmyhome.app.network.ApiResult
 import com.pinmyhome.app.network.repositories.PropertyRepository
 import com.pinmyhome.app.network.repositories.ReferenceRepository
+import com.pinmyhome.app.ui.auth.getAuthToken
 import com.pinmyhome.app.ui.components.AppSnackbar
 import com.pinmyhome.app.ui.components.rememberSnackbarState
 import com.pinmyhome.app.ui.components.showError
-import com.pinmyhome.app.ui.theme.BorderMuted
 import com.pinmyhome.app.ui.theme.BrandTeal
 import com.pinmyhome.app.ui.theme.CardWhite
-import com.pinmyhome.app.ui.theme.DividerSoft
+import com.pinmyhome.app.ui.theme.DividerColor
+import com.pinmyhome.app.ui.theme.InputBorder
 import com.pinmyhome.app.ui.theme.LightBackground
 import com.pinmyhome.app.ui.theme.NavyDark
 import com.pinmyhome.app.ui.theme.TextPrimary
@@ -111,6 +116,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.DataOutputStream
+import java.net.HttpURLConnection
 import java.net.URL
 import java.util.UUID
 
@@ -157,7 +164,7 @@ private object WizardButtons {
     val CompactHeight = 44.dp
     val Shape = RoundedCornerShape(12.dp)
     val CompactShape = RoundedCornerShape(10.dp)
-    val Border = BorderStroke(1.5.dp, BorderMuted)
+    val Border = BorderStroke(1.5.dp, InputBorder)
 }
 
 @Composable
@@ -522,47 +529,60 @@ fun AddPropertyScreen(
                 }
                 constructionYear.toIntOrNull()?.let { put("construction_year", it) }
                 if (description.isNotBlank()) put("description", description.trim())
-                // Remote URLs can be sent with create; local files upload after.
-                if (remoteUrls.isNotEmpty()) {
-                    put("photos", JSONArray().apply { remoteUrls.forEach { put(it) } })
-                }
             }
 
             when (val result = PropertyRepository.create(context, body)) {
                 is ApiResult.Success -> {
                     val propertyId = extractPropertyId(result.data)
-                    if (localUris.isNotEmpty()) {
-                        if (propertyId == null) {
-                            isSubmitting = false
-                            showError(
-                                snackbar,
-                                "Property created, but photo upload needs a property id from the API."
-                            )
-                            return@launch
-                        }
-                        when (
-                            val upload = PropertyRepository.addPhotos(
-                                context = context,
-                                propertyId = propertyId,
-                                localUris = localUris
-                            )
-                        ) {
-                            is ApiResult.Success -> {
-                                isSubmitting = false
-                                showSuccessDialog = true
-                            }
+                    val hasPhotos = remoteUrls.isNotEmpty() || localUris.isNotEmpty()
+
+                    if (!hasPhotos) {
+                        isSubmitting = false
+                        showSuccessDialog = true
+                        return@launch
+                    }
+
+                    if (propertyId == null) {
+                        isSubmitting = false
+                        showError(
+                            snackbar,
+                            "Property created, but photo upload needs a property id from the API."
+                        )
+                        return@launch
+                    }
+
+                    // Remote https URLs via existing repository (JSON).
+                    if (remoteUrls.isNotEmpty()) {
+                        when (val upload = PropertyRepository.addPhotos(context, propertyId, remoteUrls)) {
+                            is ApiResult.Success -> Unit
                             is ApiResult.Error -> {
                                 isSubmitting = false
                                 showError(
                                     snackbar,
-                                    "Property saved, but photos failed: ${upload.message}"
+                                    "Property saved, but photo URLs failed: ${upload.message}"
                                 )
+                                return@launch
                             }
                         }
-                    } else {
-                        isSubmitting = false
-                        showSuccessDialog = true
                     }
+
+                    // Gallery files via multipart (ApiClient is JSON-only).
+                    if (localUris.isNotEmpty()) {
+                        when (val upload = uploadLocalPropertyPhotos(context, propertyId, localUris)) {
+                            is ApiResult.Success -> Unit
+                            is ApiResult.Error -> {
+                                isSubmitting = false
+                                showError(
+                                    snackbar,
+                                    "Property saved, but gallery photos failed: ${upload.message}"
+                                )
+                                return@launch
+                            }
+                        }
+                    }
+
+                    isSubmitting = false
+                    showSuccessDialog = true
                 }
                 is ApiResult.Error -> {
                     isSubmitting = false
@@ -606,7 +626,7 @@ fun AddPropertyScreen(
         ) {
             TopBar(onBack = onBack)
             StepIndicator(currentStep = currentStep, steps = STEPS)
-            HorizontalDivider(color = DividerSoft)
+            HorizontalDivider(color = DividerColor)
 
             Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
                 AnimatedContent(
@@ -976,7 +996,7 @@ private fun ExistingPropertiesTable(existingProperties: List<ExistingProperty>) 
                     )
                 }
             }
-            HorizontalDivider(color = DividerSoft)
+            HorizontalDivider(color = DividerColor)
             existingProperties.forEach { prop ->
                 Row(
                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
@@ -1048,7 +1068,7 @@ private fun ExistingPropertiesTable(existingProperties: List<ExistingProperty>) 
                         modifier = Modifier.width(88.dp)
                     )
                 }
-                HorizontalDivider(color = DividerSoft)
+                HorizontalDivider(color = DividerColor)
             }
         }
     }
@@ -1992,9 +2012,9 @@ private fun RequiredLabel(label: String) {
 
 @Composable
 private fun fieldColors() = OutlinedTextFieldDefaults.colors(
-    unfocusedBorderColor = BorderMuted,
+    unfocusedBorderColor = InputBorder,
     focusedBorderColor = NavyDark,
-    disabledBorderColor = DividerSoft,
+    disabledBorderColor = DividerColor,
     unfocusedContainerColor = CardWhite,
     focusedContainerColor = CardWhite,
     disabledContainerColor = Color(0xFFF7F9FC),
@@ -2109,5 +2129,84 @@ fun FormSectionLabel(label: String) {
         )
         Spacer(modifier = Modifier.width(8.dp))
         Text(label, color = TextPrimary, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+    }
+}
+
+/**
+ * Uploads gallery-picked images as multipart/form-data.
+ * Kept local to this screen so existing JSON-only [ApiClient] / [PropertyRepository.addPhotos]
+ * (URL list) remain unchanged. Remote https URLs are sent via create / addPhotos instead.
+ */
+private suspend fun uploadLocalPropertyPhotos(
+    context: Context,
+    propertyId: String,
+    uris: List<Uri>
+): ApiResult<JSONObject> = withContext(Dispatchers.IO) {
+    if (uris.isEmpty()) return@withContext ApiResult.Success(JSONObject())
+
+    var conn: HttpURLConnection? = null
+    try {
+        val boundary = "----PinMyHomeBoundary${UUID.randomUUID()}"
+        val token = getAuthToken(context)
+        val endpoint = ApiEndpoints.Properties.addPhotos(propertyId)
+        conn = (URL("${ApiConfig.BASE_URL}$endpoint").openConnection() as HttpURLConnection).apply {
+            requestMethod = "POST"
+            doOutput = true
+            setRequestProperty("Accept", "application/json")
+            setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
+            if (!token.isNullOrBlank()) setRequestProperty("Authorization", "Bearer $token")
+            connectTimeout = ApiConfig.TIMEOUT_MS
+            readTimeout = ApiConfig.TIMEOUT_MS
+        }
+
+        DataOutputStream(conn.outputStream).use { out ->
+            uris.forEachIndexed { index, uri ->
+                val mime = context.contentResolver.getType(uri) ?: "image/jpeg"
+                val ext = when {
+                    mime.contains("png") -> "png"
+                    mime.contains("webp") -> "webp"
+                    else -> "jpg"
+                }
+                val fileName = uri.lastPathSegment
+                    ?.substringAfterLast('/')
+                    ?.takeIf { it.contains('.') }
+                    ?: "photo_${index + 1}.$ext"
+
+                out.writeBytes("--$boundary\r\n")
+                out.writeBytes(
+                    "Content-Disposition: form-data; name=\"photos\"; filename=\"$fileName\"\r\n"
+                )
+                out.writeBytes("Content-Type: $mime\r\n\r\n")
+                context.contentResolver.openInputStream(uri)?.use { input ->
+                    input.copyTo(out)
+                } ?: return@withContext ApiResult.Error("Could not read selected photo")
+                out.writeBytes("\r\n")
+            }
+            out.writeBytes("--$boundary--\r\n")
+            out.flush()
+        }
+
+        val code = conn.responseCode
+        val text = if (code in 200..299) {
+            conn.inputStream.bufferedReader(Charsets.UTF_8).readText()
+        } else {
+            conn.errorStream?.bufferedReader(Charsets.UTF_8)?.readText() ?: "{}"
+        }
+        if (code in 200..299) {
+            ApiResult.Success(ApiClient.normalise(text))
+        } else {
+            val json = runCatching { JSONObject(text) }.getOrElse { JSONObject() }
+            val msg = json.optString("error").ifBlank { json.optString("message") }
+                .ifBlank { "Photo upload failed (HTTP $code)" }
+            ApiResult.Error(msg, code)
+        }
+    } catch (e: java.net.SocketTimeoutException) {
+        ApiResult.Error("Connection timed out while uploading photos.")
+    } catch (e: java.net.UnknownHostException) {
+        ApiResult.Error("No internet connection.")
+    } catch (e: Exception) {
+        ApiResult.Error("Photo upload failed: ${e.message ?: e.javaClass.simpleName}")
+    } finally {
+        conn?.disconnect()
     }
 }
