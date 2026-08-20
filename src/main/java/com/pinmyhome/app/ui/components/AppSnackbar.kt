@@ -21,7 +21,6 @@ import androidx.compose.ui.unit.sp
 class SnackbarState {
     val hostState = SnackbarHostState()
     var pendingMessage by mutableStateOf<String?>(null)
-        internal set
 }
 
 @Composable
