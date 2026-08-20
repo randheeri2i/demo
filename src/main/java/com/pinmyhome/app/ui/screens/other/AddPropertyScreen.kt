@@ -114,7 +114,6 @@ import com.pinmyhome.app.ui.theme.TextSecondary
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import org.json.JSONArray
 import org.json.JSONObject
 import java.io.DataOutputStream
 import java.net.HttpURLConnection
