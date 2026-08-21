@@ -81,6 +81,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
@@ -150,8 +151,8 @@ private data class SocietyConfig(
     val avgPricePerSqft: Int
 )
 
-/** A photo selected from gallery (local) or pasted as a remote URL. */
-private data class PropertyPhoto(
+/** A photo selected from gallery (local) or pasted as a remote URL, before upload. */
+private data class PickedPhoto(
     val id: String = UUID.randomUUID().toString(),
     val uri: String,
     val isRemote: Boolean = uri.startsWith("http://") || uri.startsWith("https://")
@@ -200,7 +201,7 @@ private fun WizardPrimaryButton(
         } else {
             if (leadingIcon != null) {
                 Icon(leadingIcon, null, modifier = Modifier.size(16.dp), tint = Color.White)
-                Spacer(Modifier = Modifier.width(6.dp))
+                Spacer(modifier = Modifier.width(6.dp))
             }
             Text(text, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Color.White)
         }
@@ -303,7 +304,7 @@ fun AddPropertyScreen(
     var description by remember { mutableStateOf("") }
 
     var photoUrl by remember { mutableStateOf("") }
-    val photos = remember { mutableStateListOf<PropertyPhoto>() }
+    val photos = remember { mutableStateListOf<PickedPhoto>() }
 
     val photoPicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickMultipleVisualMedia(maxItems = 12)
@@ -319,7 +320,7 @@ fun AddPropertyScreen(
             }
             val value = uri.toString()
             if (photos.none { it.uri == value }) {
-                photos.add(PropertyPhoto(uri = value, isRemote = false))
+                photos.add(PickedPhoto(uri = value, isRemote = false))
             }
         }
     }
@@ -338,7 +339,7 @@ fun AddPropertyScreen(
                 showError(snackbar, "Photo URL must start with http:// or https://")
             photos.any { it.uri == url } -> showError(snackbar, "This photo is already added")
             else -> {
-                photos.add(PropertyPhoto(uri = url, isRemote = true))
+                photos.add(PickedPhoto(uri = url, isRemote = true))
                 photoUrl = ""
             }
         }
@@ -1555,7 +1556,7 @@ private fun Step2_PropertyDetails(
                         uncheckedColor = TextSecondary
                     )
                 )
-                Spacer(modifier.width(8.dp))
+                Spacer(Modifier.width(8.dp))
                 Text(
                     "Vastu Compliant",
                     color = TextPrimary,
@@ -1589,13 +1590,13 @@ private fun Step2_PropertyDetails(
 // ─── Step 3: Photos ───────────────────────────────────────────────────────────
 @Composable
 private fun Step3_Photos(
-    photos: List<PropertyPhoto>,
+    photos: List<PickedPhoto>,
     photoUrl: String,
     onPhotoUrlChange: (String) -> Unit,
     onBrowseClick: () -> Unit,
     onAddUrl: () -> Unit,
-    onRemove: (PropertyPhoto) -> Unit,
-    onMakePrimary: (PropertyPhoto) -> Unit
+    onRemove: (PickedPhoto) -> Unit,
+    onMakePrimary: (PickedPhoto) -> Unit
 ) {
     StepCard(title = "Photos", subtitle = "Upload flat photos (optional)") {
         Box(
@@ -1674,14 +1675,14 @@ private fun Step3_Photos(
         }
 
         if (photos.isNotEmpty()) {
-            Spacer(modifier.height(14.dp))
+            Spacer(Modifier.height(14.dp))
             Text(
                 "${photos.size} photo${if (photos.size == 1) "" else "s"} selected",
                 color = TextPrimary,
                 fontSize = 13.sp,
                 fontWeight = FontWeight.Medium
             )
-            Spacer(modifier.height(10.dp))
+            Spacer(Modifier.height(10.dp))
             Row(
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
                 modifier = Modifier.horizontalScroll(rememberScrollState())
@@ -1701,15 +1702,13 @@ private fun Step3_Photos(
 
 @Composable
 private fun PhotoThumbnail(
-    photo: PropertyPhoto,
+    photo: PickedPhoto,
     isPrimary: Boolean,
     onRemove: () -> Unit,
     onMakePrimary: () -> Unit
 ) {
     val context = LocalContext.current
-    var imageBitmap by remember(photo.uri) {
-        mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null)
-    }
+    var imageBitmap by remember(photo.uri) { mutableStateOf<ImageBitmap?>(null) }
 
     LaunchedEffect(photo.uri) {
         imageBitmap = withContext(Dispatchers.IO) {
@@ -1787,10 +1786,7 @@ private fun PhotoThumbnail(
     }
 }
 
-private fun decodePhotoBitmap(
-    context: android.content.Context,
-    uriString: String
-): androidx.compose.ui.graphics.ImageBitmap? {
+private fun decodePhotoBitmap(context: Context, uriString: String): ImageBitmap? {
     val options = BitmapFactory.Options().apply { inSampleSize = 4 }
     val bitmap = when {
         uriString.startsWith("http://") || uriString.startsWith("https://") -> {
@@ -1945,7 +1941,7 @@ private fun SuccessDialog(onDismiss: () -> Unit) {
                     fontWeight = FontWeight.Bold,
                     textAlign = TextAlign.Center
                 )
-                Spacer(modifier.height(8.dp))
+                Spacer(Modifier.height(8.dp))
                 Text(
                     "Your property is now under inspection.",
                     color = TextSecondary,
